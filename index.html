@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0a1a" />
+  <title>Sprunki vs Monsters</title>
+  <meta name="description" content="A tiny arcade game — sneak your Sprunki past the monsters and win the Beat Battle." />
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Space+Mono:wght@700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- ===== TITLE / CHARACTER SELECT ===== -->
+    <section id="screen-title" class="screen active">
+      <div class="title-inner">
+        <div class="logo">
+          <button id="mute-btn" class="mute" aria-label="Toggle sound">🔊</button>
+          <h1><span class="w1">SPRUNKI</span> <span class="vs">vs</span> <span class="w2">MONSTERS</span></h1>
+          <p class="tag">Sneak past the monsters. Get caught, and you're in a Beat Battle.<br />Beat them all to win.</p>
+        </div>
+
+        <h2 class="pick">Choose your Sprunki</h2>
+        <div id="roster" class="roster"></div>
+
+        <button id="start-btn" class="btn big">START</button>
+
+        <div class="controls">
+          <span><b>Move:</b> WASD / arrows / drag</span>
+          <span><b>Battle:</b> A S K L or tap the pads</span>
+        </div>
+        <p class="madefor">A tiny arcade game • made for Michael</p>
+      </div>
+    </section>
+
+    <!-- ===== GAME (ARENA) ===== -->
+    <section id="screen-game" class="screen">
+      <div class="hud">
+        <div class="hud-left">
+          <span id="hud-lives" class="lives"></span>
+        </div>
+        <div class="hud-mid" id="hud-alert"></div>
+        <div class="hud-right">
+          <span class="mon-count">Monsters left: <b id="hud-monsters">0</b></span>
+        </div>
+      </div>
+      <div class="stage-wrap">
+        <canvas id="arena" width="960" height="640"></canvas>
+      </div>
+      <p class="hint" id="arena-hint">Sneak up behind a monster to ambush it — or fight at a disadvantage if it spots you.</p>
+    </section>
+
+    <!-- ===== BEAT BATTLE ===== -->
+    <section id="screen-battle" class="screen">
+      <div class="battle-top">
+        <div class="vs-tag"><span id="battle-foe">Monster</span></div>
+        <div class="beatmeter"><div id="beatfill" class="beatfill"></div></div>
+        <div class="combo" id="battle-combo"></div>
+      </div>
+      <div class="stage-wrap">
+        <canvas id="battle-canvas" width="480" height="640"></canvas>
+      </div>
+      <div class="pads" id="pads">
+        <button class="pad" data-lane="0"><span>A</span></button>
+        <button class="pad" data-lane="1"><span>S</span></button>
+        <button class="pad" data-lane="2"><span>K</span></button>
+        <button class="pad" data-lane="3"><span>L</span></button>
+      </div>
+    </section>
+
+    <!-- ===== END OVERLAY ===== -->
+    <div id="overlay" class="overlay">
+      <div class="overlay-card">
+        <h2 id="ov-title">Nice!</h2>
+        <p id="ov-msg"></p>
+        <button id="ov-btn" class="btn big">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./game.js"></script>
+</body>
+</html>
