@@ -28,6 +28,19 @@ A fully procedural WebAudio step-sequencer (synthesized kick/hat/snare/bass/lead
 scheduling) — a bouncy pentatonic groove in normal mode, a slower minor-key Phase II theme.
 Music starts on your first tap/click; the 🔊/🔇 button mutes music and SFX.
 
+## Looks & feel
+
+Rendered entirely with Canvas 2D — neon glow/bloom, particle bursts and trails, a parallax
+starfield, animated vision-cone scan lines, screen shake, a glassmorphic UI with an animated
+title, and a live menu backdrop of bouncing Sprunkis. Honors `prefers-reduced-motion`.
+
+## Built for every screen
+
+Fully playable on desktop, laptop, phone, and tablet. The 4:3 stage scales responsively and
+stays centered; touch input is first-class (drag to move with an on-screen aim indicator, tap
+the pads to battle), tap targets are large, pinch-zoom and scroll-bounce are disabled, and the
+layout reflows for small portrait screens.
+
 ## Run / deploy
 
 It's a static file — open `index.html` locally, or deploy the folder to any static host
