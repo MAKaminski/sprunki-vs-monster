@@ -1,9 +1,11 @@
 # 🔊 Sprunki vs Monsters
 
-A tiny browser arcade game. You're a **Sprunki** — a little beat-maker. Monsters
-roam each arena with cones of sight. Slip past them and sneak up from behind to
-ambush a monster into a **Beat Battle** (with a head-start), or get spotted and
-fight at a disadvantage. Defeat every monster in every arena to win.
+A tiny browser arcade game in **one self-contained `index.html`** — canvas + vanilla JS +
+WebAudio, no dependencies, no build step, no external assets.
+
+You're a **Sprunki**, a little beat-maker roaming a top-down arena. Monsters patrol with
+vision cones. If a cone catches you, it pulls you into a rhythm **Beat Battle**. Defeat every
+monster to win; lose all 3 hearts and it's game over.
 
 ## Controls
 
@@ -14,21 +16,21 @@ fight at a disadvantage. Defeat every monster in every arena to win.
 
 ## How it plays
 
-- **Choose your Sprunki** — each has a small perk (speed, wider hit windows, or smaller enemy cones).
-- **Sneak** — stay out of the yellow vision cones. Touch a monster from *outside* its cone for a **Sneak Attack** (better starting meter).
-- **Beat Battle** — notes fall down four lanes; hit them on the beat to fill the meter to 100%. Miss too many and you lose a heart.
-- **Win** — clear all monsters across 4 increasingly busy arenas. 3 hearts total.
+- **Choose your Sprunki** — 8 characters (Ratty, Simon, Pinky, Oren, Vineria, Lime, Mr. Sun, Mr. Black Hat), each drawn distinctly.
+- **Sneak** — stay out of the monsters' vision cones. Get spotted and a Beat Battle begins.
+- **Beat Battle** — one of four colored pads lights with a shrinking countdown ring; hit the matching pad before the ring closes. Land enough hits (5 / 6 on hard) before 3 misses to defeat the monster.
+- **Beat Battle speed** — a difficulty slider sets the reaction window from `1.0s` (Hard) to `3.0s` (Kid), default `2.0s`. It's constant per battle and the countdown ring is synced to it exactly.
+- **Mr. Black Hat = Phase II** — selecting him flips the game into a super-hard mode: a dark, scary arena, mutated monsters, and a **breeding swarm** — monsters multiply when they see each other (each of the 4 originals breeds up to twice; the swarm caps at 12). Battles need 6 hits.
 
-## Tech
+## Soundtrack
 
-Pure static site — vanilla HTML/CSS/JS, Canvas 2D rendering, WebAudio synth for
-sound. No build step, no dependencies.
+A fully procedural WebAudio step-sequencer (synthesized kick/hat/snare/bass/lead, lookahead
+scheduling) — a bouncy pentatonic groove in normal mode, a slower minor-key Phase II theme.
+Music starts on your first tap/click; the 🔊/🔇 button mutes music and SFX.
 
-```
-index.html    markup + screens
-style.css     neon arcade styling
-game.js       arena stealth, vision cones, rhythm battle, audio
-favicon.svg   little Sprunki
-```
+## Run / deploy
+
+It's a static file — open `index.html` locally, or deploy the folder to any static host
+(e.g. Vercel) with zero configuration.
 
 Made for Michael.
