@@ -279,13 +279,14 @@ var Speech = (function(){
   function speakOne(text){ if(!ok||!text) return; try{ if(synth.paused) synth.resume(); synth.speak(mkUtter(text)); }catch(e){} }
   // Unlock TTS on the first user gesture (some browsers block the first non-gesture utterance).
   function prime(){ if(!ok||primed) return; primed=true; try{ synth.resume(); synth.speak(mkUtter(' ')); }catch(e){} }
-  // Speak items back-to-back (e.g. [word, definition]); one cancel up front, then a short delay
-  // before speaking avoids the Chrome cancel→speak race that silently drops utterances.
+  // Speak items back-to-back (e.g. [word, definition]). Speak SYNCHRONOUSLY so a tap-triggered
+  // call stays inside the user-gesture (iOS/Safari block speech scheduled from a later timer).
+  // Only cancel when something is actually queued, to avoid the Chrome cancel→speak drop.
   function speakSeq(list){ if(!ok) return; list=(list||[]).filter(function(t){return t && String(t).trim();});
     lastSpoken=list.slice();
-    try{ synth.cancel(); }catch(e){}
-    setTimeout(function(){ try{ if(synth.paused) synth.resume(); }catch(e){}
-      for(var i=0;i<list.length;i++) speakOne(list[i]); }, 55);
+    try{ if(synth.speaking||synth.pending) synth.cancel(); }catch(e){}
+    try{ if(synth.paused) synth.resume(); }catch(e){}
+    for(var i=0;i<list.length;i++) speakOne(list[i]);
   }
   return { speakSeq:speakSeq, prime:prime, get supported(){ return ok; }, _last:function(){ return lastSpoken; } };
 })();
