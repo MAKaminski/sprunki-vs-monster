@@ -85,6 +85,16 @@
     border:1px solid var(--line);color:var(--ink);width:48px;height:48px;border-radius:13px;font-size:20px;cursor:pointer;
     display:flex;align-items:center;justify-content:center}
   #muteBtn:active{transform:scale(.92)}
+  #optBtn{position:absolute;bottom:12px;left:12px;z-index:30;background:rgba(12,12,30,.72);backdrop-filter:blur(6px);
+    border:1px solid var(--line);color:var(--ink);width:48px;height:48px;border-radius:13px;font-size:20px;cursor:pointer;
+    display:flex;align-items:center;justify-content:center}
+  #optBtn:active{transform:scale(.92)}
+  #options{z-index:40;gap:2.2vmin}
+  .optrow{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;max-width:460px}
+  .optrow label{font-size:13px;color:var(--muted)} .optrow b{color:var(--a1)}
+  .optsel{width:100%;padding:12px 14px;border-radius:12px;background:rgba(255,255,255,.06);color:var(--ink);
+    border:1px solid var(--line);font:inherit;font-size:15px;min-height:50px;cursor:pointer}
+  .optbtns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:4px}
   .hintline{font-size:clamp(11px,2.3vw,13px);color:var(--muted)}
   .badge{display:inline-block;padding:3px 10px;border-radius:999px;background:rgba(255,43,43,.15);
     border:1px solid rgba(255,43,43,.5);color:#ff9a9a;font-size:11px;font-weight:700}
@@ -100,6 +110,7 @@
   <canvas id="cv" width="720" height="540"></canvas>
   <div id="scan"></div>
   <button id="muteBtn" aria-label="Toggle sound">🔊</button>
+  <button id="optBtn" aria-label="Options">⚙️</button>
 
   <div id="menu" class="overlay solid active">
     <h1><span class="g">SPRUNKI</span> <span class="v">vs</span> <span class="p">MONSTERS</span></h1>
@@ -149,6 +160,23 @@
       <div class="scaleends"><span>K · easiest</span><span>hardest · 12</span></div>
     </div>
     <button id="toSelect2" class="btn">Choose again</button>
+  </div>
+
+  <div id="options" class="overlay solid">
+    <h1 style="font-size:clamp(24px,6vw,42px)">Options</h1>
+    <div class="optrow">
+      <label>Reading voice</label>
+      <select id="voiceSel" class="optsel" aria-label="Reading voice"></select>
+    </div>
+    <div class="optrow">
+      <label>Reading speed: <b id="rateVal">0.9×</b></label>
+      <input id="rateSlider" class="speedSlider" type="range" min="0.6" max="1.2" step="0.1" value="0.9" aria-label="Reading speed" />
+    </div>
+    <div class="optbtns">
+      <button id="voiceTest" class="btn">🔊 Test voice</button>
+      <button id="optClose" class="btn">Done</button>
+    </div>
+    <p class="hintline">On iPad/iPhone the built-in Apple voices sound best. Other voices play online.</p>
   </div>
 </div>
 
@@ -259,16 +287,57 @@ var WordBank = (function(){
     defCount:function(){ var c=0; for(var i=0;i<words.length;i++) if(defMap[words[i]]) c++; return c; } };
 })();
 
-// Text-to-speech (guarded: absent in headless/older browsers → never throws)
+// Text-to-speech — layered & voice-selectable so it works and sounds good cross-device:
+//   • Device voices via the Web Speech API (Safari/iOS Apple voices, Chrome, Edge, Firefox) — offline, nice
+//   • Online voices streamed as audio for browsers that block Web Speech (e.g. Brave zeros out voices)
+// An Options menu lets the player pick a voice + reading speed. Speech is synchronous so a tap keeps
+// the iOS/Safari user-gesture. Nothing here is a hand-rolled synth — it uses the platform + hosted voices.
 var Speech = (function(){
   var ok = (typeof window!=='undefined') && ('speechSynthesis' in window) && (typeof window.SpeechSynthesisUtterance!=='undefined');
-  var voice=null;
-  function choose(){ if(!ok) return; try{ var vs=window.speechSynthesis.getVoices()||[];
-    voice = vs.filter(function(v){return /en[-_]US/i.test(v.lang);})[0] || vs.filter(function(v){return /^en/i.test(v.lang);})[0] || vs[0] || null; }catch(e){} }
-  if(ok){ try{ choose(); if(typeof window.speechSynthesis.addEventListener==='function') window.speechSynthesis.addEventListener('voiceschanged',choose); else window.speechSynthesis.onvoiceschanged=choose; }catch(e){ ok=false; } }
-  function say(w){ if(!ok) return false; try{ window.speechSynthesis.cancel();
-    var u=new SpeechSynthesisUtterance(w); if(voice) u.voice=voice; u.rate=0.78; u.pitch=1.05; window.speechSynthesis.speak(u); return true; }catch(e){ return false; } }
-  return { say:say, get supported(){ return ok; } };
+  var synth = ok ? window.speechSynthesis : null;
+  var defVoice=null, primed=false, live=[], lastSpoken=[], lastMode='', audioEl=null;
+  var voiceKey='auto', rate=0.92;
+  // curated natural online voices (Amazon Polly via the free StreamElements endpoint) + a plain standard
+  var ONLINE=[ {id:'Brian',name:'Brian — UK, calm'}, {id:'Amy',name:'Amy — UK, bright'},
+    {id:'Joanna',name:'Joanna — US, warm'}, {id:'Matthew',name:'Matthew — US, deep'},
+    {id:'Ivy',name:'Ivy — US, kid'}, {id:'Justin',name:'Justin — US, kid'}, {id:'google',name:'Standard'} ];
+  function chooseDefault(){ if(!ok) return; try{ var vs=synth.getVoices()||[];
+    defVoice = vs.filter(function(v){return /en[-_]US/i.test(v.lang);})[0]
+            || vs.filter(function(v){return /^en/i.test(v.lang);})[0] || vs[0] || null; }catch(e){ defVoice=null; } }
+  if(ok){ try{ chooseDefault(); if(synth.addEventListener) synth.addEventListener('voiceschanged',chooseDefault); else synth.onvoiceschanged=chooseDefault; }catch(e){ ok=false; synth=null; } }
+  function deviceVoices(){ if(!ok) return []; try{ return (synth.getVoices()||[]).filter(function(v){return /^en/i.test(v.lang);}); }catch(e){ return []; } }
+  function findDevice(name){ var vs=deviceVoices(); for(var i=0;i<vs.length;i++) if(vs[i].name===name||vs[i].voiceURI===name) return vs[i]; return null; }
+  function mkUtter(text,v){ var u=new SpeechSynthesisUtterance(String(text)); u.lang='en-US'; u.rate=rate; u.pitch=1.05; u.volume=1;
+    if(v) u.voice=v; else if(defVoice) u.voice=defVoice;
+    live.push(u); u.onend=u.onerror=function(){ var i=live.indexOf(u); if(i>=0) live.splice(i,1); }; return u; }
+  function nativeSeq(list,v){ try{ if(synth.speaking||synth.pending) synth.cancel(); if(synth.paused) synth.resume(); }catch(e){}
+    for(var i=0;i<list.length;i++){ try{ synth.speak(mkUtter(list[i],v)); }catch(e){} } }
+  function url(vid,text){ var t=String(text).slice(0,280);
+    if(vid==='google') return 'https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q='+encodeURIComponent(t.slice(0,190));
+    return 'https://api.streamelements.com/kappa/v2/speech?voice='+encodeURIComponent(vid)+'&text='+encodeURIComponent(t); }
+  function audioSeq(list,vid){ try{ if(!audioEl){ audioEl=new Audio(); } var q=list.slice();
+    function nxt(){ if(!q.length){ audioEl.onended=null; return; } var t=q.shift();
+      try{ audioEl.src=url(vid,t); audioEl.onended=nxt; var p=audioEl.play(); if(p&&p.catch) p.catch(function(){}); }catch(e){ nxt(); } }
+    nxt(); }catch(e){} }
+  function plan(){
+    if(voiceKey.indexOf('online:')===0) return {mode:'online', id:voiceKey.slice(7)};
+    if(voiceKey.indexOf('device:')===0){ var dv=findDevice(voiceKey.slice(7)); if(dv) return {mode:'native', v:dv}; }
+    if(deviceVoices().length) return {mode:'native', v:defVoice||deviceVoices()[0]}; // auto: device if available
+    return {mode:'online', id:'Brian'};                                             // else a natural online voice
+  }
+  function prime(){ if(primed) return; primed=true;
+    try{ if(ok){ synth.resume(); synth.speak(mkUtter(' ')); } }catch(e){}
+    try{ if(!audioEl){ audioEl=new Audio(); } }catch(e){} }
+  function speakSeq(list){ list=(list||[]).filter(function(t){return t && String(t).trim();}); lastSpoken=list.slice();
+    var p=plan(); if(p.mode==='native'){ lastMode='native'; nativeSeq(list,p.v); } else { lastMode='online'; audioSeq(list,p.id); } }
+  function setVoice(k){ voiceKey=k||'auto'; }
+  function setRate(r){ r=+r; if(r>=0.5 && r<=1.4) rate=r; }
+  function test(){ speakSeq(["Hi! I'm your spelling buddy. Ready to play?"]); }
+  function listVoices(){ return {
+    device: deviceVoices().map(function(v){ return {key:'device:'+v.name, name:v.name}; }),
+    online: ONLINE.map(function(o){ return {key:'online:'+o.id, name:o.name}; }) }; }
+  return { speakSeq:speakSeq, prime:prime, setVoice:setVoice, setRate:setRate, test:test, listVoices:listVoices,
+    get supported(){ return true; }, _last:function(){ return lastSpoken; }, _mode:function(){ return lastMode; }, _key:function(){ return voiceKey; } };
 })();
 
 /* ============================ S2 · drawSprunki ============================ */
@@ -815,7 +884,10 @@ function activeBattle(){ return (LEARN_ENABLED && state.mode==='learn') ? Spell 
 var Spell = (function(){
   var ROWS = ['qwertyuiop','asdfghjkl','zxcvbnm'];
   var KEYS_Y = 322, KEY_H = 50, GAP_Y = 7, GAP_X = 8;
-  var HEAR = {x:W/2-70, y:288, w:140, h:30};
+  var BTN_W=168, BTN_H=36, BTN_Y=284, BTN_GAP=16;
+  var HEAR_WORD={x:W/2-BTN_W-BTN_GAP/2, y:BTN_Y, w:BTN_W, h:BTN_H};
+  var HEAR_DEF ={x:W/2+BTN_GAP/2,        y:BTN_Y, w:BTN_W, h:BTN_H};
+  function inRect(pt,r){ return pt.x>=r.x&&pt.x<=r.x+r.w&&pt.y>=r.y&&pt.y<=r.y+r.h; }
   // build key rectangles once (letters + Backspace + Enter)
   function keyRects(){
     var out=[];
@@ -835,7 +907,7 @@ var Spell = (function(){
   function cur(){ var b=state.battle; return b.words[b.idx]; }
   function present(now){ var b=state.battle; b.typed=''; b.revealUntil=now+2000; b.feedback=null;
     if(!b.words[b.idx]) b.words=b.words.concat(WordBank.pick(state.grade,4));
-    Speech.say(cur()); }
+    Speech.speakSeq([cur(), WordBank.defOf(cur())]); } // read the word, then its definition
   function start(monster){
     var need = state.hardMode?4:3;
     state.battle={ kind:'spell', monster:monster, need:need, hits:0, misses:0, idx:0,
@@ -862,7 +934,8 @@ var Spell = (function(){
     else if(k==='Enter'){ e.preventDefault(); submit(performance.now()); }
     else if(k&&k.length===1&&/[a-zA-Z]/.test(k)){ type(k.toLowerCase()); } }
   function pointer(pt){ var b=state.battle; if(!b||b.over) return;
-    if(pt.x>=HEAR.x&&pt.x<=HEAR.x+HEAR.w&&pt.y>=HEAR.y&&pt.y<=HEAR.y+HEAR.h){ b.revealUntil=performance.now()+2000; Speech.say(cur()); return; }
+    if(inRect(pt,HEAR_WORD)){ b.revealUntil=performance.now()+2000; Speech.speakSeq([cur()]); return; }
+    if(inRect(pt,HEAR_DEF)){ var d=WordBank.defOf(cur()); if(d){ b.revealUntil=performance.now()+2000; Speech.speakSeq([d]); } return; }
     var ks=keyRects();
     for(var i=0;i<ks.length;i++){ var kk=ks[i];
       if(pt.x>=kk.x&&pt.x<=kk.x+kk.w&&pt.y>=kk.y&&pt.y<=kk.y+kk.h){
@@ -875,6 +948,12 @@ var Spell = (function(){
   function wrapText(text,maxW,font){ ctx.font=font; var ws=text.split(' '), lines=[], line='';
     for(var i=0;i<ws.length;i++){ var t=line?line+' '+ws[i]:ws[i]; if(ctx.measureText(t).width>maxW && line){ lines.push(line); line=ws[i]; } else line=t; }
     if(line) lines.push(line); return lines; }
+  function drawBtn(r,label,rgb,enabled){
+    ctx.globalAlpha=enabled?1:0.38;
+    ctx.fillStyle='rgba('+rgb+',.15)'; ctx.strokeStyle='rgba('+rgb+',1)'; ctx.lineWidth=1.5;
+    roundRect(ctx,r.x,r.y,r.w,r.h,17); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#eef1ff'; ctx.font='bold 15px system-ui'; ctx.textAlign='center';
+    ctx.fillText(label, r.x+r.w/2, r.y+r.h/2+5); ctx.globalAlpha=1; }
   function render(now){
     var b=state.battle; if(!b) return;
     drawBackground(now,state.hardMode,Sound.beatPhase()); drawNotesLayer(now,state.hardMode);
@@ -910,10 +989,9 @@ var Spell = (function(){
       if(show){ ctx.fillStyle=revealing?'#ffd23f':'#eef1ff'; ctx.font='bold 30px system-ui';
         ctx.shadowColor=revealing?'#ffd23f':'#38f9d7'; ctx.shadowBlur=revealing?12:8; ctx.fillText(show.toUpperCase(),chx,yy+8); ctx.shadowBlur=0; }
     }
-    // hear button
-    ctx.fillStyle='rgba(56,249,215,.14)'; ctx.strokeStyle='#38f9d7'; ctx.lineWidth=1.5;
-    roundRect(ctx,HEAR.x,HEAR.y,HEAR.w,HEAR.h,15); ctx.fill(); ctx.stroke();
-    ctx.fillStyle='#c9fff4'; ctx.font='bold 14px system-ui'; ctx.fillText('🔊 Hear it', W/2, HEAR.y+20);
+    // hear buttons: repeat the word, or repeat the meaning (disabled when no definition)
+    drawBtn(HEAR_WORD,'🔊 Hear word','56,249,215',true);
+    drawBtn(HEAR_DEF,'💡 Meaning','255,210,63', !!WordBank.defOf(cur()));
     // keyboard
     var ks=keyRects();
     for(var j=0;j<ks.length;j++){ var kk=ks[j], special=(kk.t!=='letter');
@@ -951,7 +1029,7 @@ function buildRoster(){
     var c=document.createElement('canvas'); c.width=80; c.height=80;
     drawSprunki(c.getContext('2d'),40,44,27,ch,0,false,1); el.appendChild(c);
     var nm=document.createElement('div'); nm.className='cn'; nm.textContent=ch.name; el.appendChild(nm);
-    el.addEventListener('click',function(){ Sound.ensure(); Sound.startMusic(); Sound.sfx.pick();
+    el.addEventListener('click',function(){ Sound.ensure(); Sound.startMusic(); Speech.prime(); Sound.sfx.pick();
       var cards=root.querySelectorAll('.card'); for(var q=0;q<cards.length;q++) cards[q].classList.remove('sel');
       el.classList.add('sel'); state.selectedChar=ch;
       document.getElementById('selHint').innerHTML = ch.boss
@@ -973,6 +1051,18 @@ function setMode(m){ if(!LEARN_ENABLED) m='beats'; state.mode=m;
 function setGrade(v){ v=clamp(v|0,0,12); state.grade=v;
   var sl=document.querySelectorAll('.gradeSlider'); for(var i=0;i<sl.length;i++) sl[i].value=v;
   var vals=document.querySelectorAll('.gradeVal'); for(var j=0;j<vals.length;j++) vals[j].textContent=gradeLabel(v); }
+function buildVoiceOptions(){
+  var sel=document.getElementById('voiceSel'); if(!sel) return;
+  var vs=Speech.listVoices(); sel.innerHTML='';
+  var auto=document.createElement('option'); auto.value='auto'; auto.textContent='Auto (best available)'; sel.appendChild(auto);
+  if(vs.device.length){ var g1=document.createElement('optgroup'); g1.label='Device voices (offline)';
+    vs.device.forEach(function(v){ var o=document.createElement('option'); o.value=v.key; o.textContent=v.name; g1.appendChild(o); }); sel.appendChild(g1); }
+  var g2=document.createElement('optgroup'); g2.label='Online voices (any browser)';
+  vs.online.forEach(function(v){ var o=document.createElement('option'); o.value=v.key; o.textContent=v.name; g2.appendChild(o); }); sel.appendChild(g2);
+  sel.value=Speech._key();
+}
+function openOptions(){ Sound.ensure(); Speech.prime(); buildVoiceOptions(); document.getElementById('options').classList.add('active'); }
+function closeOptions(){ document.getElementById('options').classList.remove('active'); }
 
 /* ============================ S9 · main loop ============================ */
 var last=0;
@@ -985,6 +1075,7 @@ function frame(now){
   else if(state.screen==='BATTLE'){ var AB=activeBattle(); AB.update(now); AB.render(now); }
   else { renderBackdrop(now); }
   ctx.restore();
+  var ob=document.getElementById('optBtn'); if(ob) ob.style.display=(state.screen==='PLAY'||state.screen==='BATTLE')?'none':'flex';
   requestAnimationFrame(frame);
 }
 
@@ -993,18 +1084,24 @@ function boot(){
   buildRoster(); setReactionWindow(2.0);
   if(!LEARN_ENABLED){ var mr=document.querySelectorAll('.modeRow'); for(var mi=0;mi<mr.length;mi++) mr[mi].hidden=true; }
   setMode('beats'); setGrade(0);
-  document.getElementById('toSelect').addEventListener('click',function(){ Sound.ensure(); Sound.startMusic(); setScreen('SELECT'); });
-  document.getElementById('toSelect2').addEventListener('click',function(){ setScreen('SELECT'); });
+  document.getElementById('toSelect').addEventListener('click',function(){ Sound.ensure(); Sound.startMusic(); Speech.prime(); setScreen('SELECT'); });
+  document.getElementById('toSelect2').addEventListener('click',function(){ Speech.prime(); setScreen('SELECT'); });
   document.getElementById('startPlay').addEventListener('click',function(){
+    Speech.prime();
     if(!state.selectedChar){ document.getElementById('selHint').textContent='Pick a character first!'; return; } startPlay(); });
   var sliders=document.querySelectorAll('.speedSlider');
   for(var i=0;i<sliders.length;i++) sliders[i].addEventListener('input',function(e){ setReactionWindow(parseFloat(e.target.value)); });
   var segs=document.querySelectorAll('.segbtn');
-  for(var s=0;s<segs.length;s++) segs[s].addEventListener('click',function(e){ Sound.ensure(); Sound.startMusic(); Sound.sfx.pick(); setMode(e.currentTarget.getAttribute('data-mode')); });
+  for(var s=0;s<segs.length;s++) segs[s].addEventListener('click',function(e){ Sound.ensure(); Sound.startMusic(); Speech.prime(); Sound.sfx.pick(); setMode(e.currentTarget.getAttribute('data-mode')); });
   var grades=document.querySelectorAll('.gradeSlider');
   for(var g=0;g<grades.length;g++) grades[g].addEventListener('input',function(e){ setGrade(parseInt(e.target.value,10)); });
   document.getElementById('muteBtn').addEventListener('click',function(e){ e.stopPropagation(); Sound.ensure();
     var m=!Sound.isMuted(); Sound.setMuted(m); this.textContent=m?'🔇':'🔊'; this.setAttribute('aria-label', m?'Unmute':'Mute'); });
+  document.getElementById('optBtn').addEventListener('click',function(e){ e.stopPropagation(); openOptions(); });
+  document.getElementById('optClose').addEventListener('click',function(e){ e.stopPropagation(); closeOptions(); });
+  document.getElementById('voiceSel').addEventListener('change',function(e){ Speech.setVoice(e.target.value); Speech.prime(); Speech.test(); });
+  document.getElementById('voiceTest').addEventListener('click',function(e){ e.stopPropagation(); Speech.prime(); Speech.test(); });
+  document.getElementById('rateSlider').addEventListener('input',function(e){ var r=parseFloat(e.target.value); Speech.setRate(r); document.getElementById('rateVal').textContent=r.toFixed(1)+'×'; });
 
   window.addEventListener('keydown',function(e){
     if(state.screen==='BATTLE'){ if(e.repeat) return;
@@ -1015,7 +1112,7 @@ function boot(){
     Arena.onKey(e,true); });
   window.addEventListener('keyup',function(e){ Arena.onKey(e,false); });
 
-  cv.addEventListener('pointerdown',function(e){ e.preventDefault(); Sound.ensure(); Sound.startMusic();
+  cv.addEventListener('pointerdown',function(e){ e.preventDefault(); Sound.ensure(); Sound.startMusic(); Speech.prime();
     var pt=toCanvas(e,cv);
     if(state.screen==='BATTLE'){ activeBattle().pointer(pt); }
     else if(state.screen==='PLAY'){ Arena.setDrag(pt); try{cv.setPointerCapture(e.pointerId);}catch(_){} } });
@@ -1033,6 +1130,9 @@ function boot(){
       setMode:setMode, setGrade:setGrade, word:function(){ return Spell.currentWord(); },
       def:function(){ var b=state.battle; return (b&&b.kind==='spell')?WordBank.defOf(b.words[b.idx]):null; },
       musicOn:function(){ return Sound.isMusicOn(); }, defCount:function(){ return WordBank.defCount(); },
+      spoken:function(){ return Speech._last(); }, speechOk:function(){ return Speech.supported; },
+      speechMode:function(){ return Speech._mode(); }, voiceKey:function(){ return Speech._key(); },
+      setVoice:function(k){ Speech.setVoice(k); }, listVoices:function(){ return Speech.listVoices(); },
       bank:function(){ return { count:WordBank.count, sizes:WordBank.byGrade.map(function(a){return a.length;}),
         avgLen:WordBank.byGrade.map(function(a){ return a.reduce(function(s,w){return s+w.length;},0)/a.length; }),
         allAlpha:WordBank.byGrade.every(function(a){ return a.every(function(w){ return /^[a-z]+$/.test(w); }); }) }; } };
