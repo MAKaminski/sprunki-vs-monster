@@ -259,36 +259,44 @@ var WordBank = (function(){
     defCount:function(){ var c=0; for(var i=0;i<words.length;i++) if(defMap[words[i]]) c++; return c; } };
 })();
 
-// Text-to-speech (guarded + hardened: retained refs, resume, lang, prime, no cancel/speak race)
+// Text-to-speech — layered so it works cross-device:
+//   1) native Web Speech API when a voice exists (Safari/iOS, Chrome, Edge, Firefox) — nice voice, offline
+//   2) streamed-audio fallback when the browser blocks/lacks Web Speech (e.g. Brave zeros out voices)
+// Speak synchronously so a tap-triggered call keeps the iOS/Safari user-gesture.
 var Speech = (function(){
   var ok = (typeof window!=='undefined') && ('speechSynthesis' in window) && (typeof window.SpeechSynthesisUtterance!=='undefined');
   var synth = ok ? window.speechSynthesis : null;
-  var voice=null, primed=false, live=[], lastSpoken=[];
+  var voice=null, primed=false, live=[], lastSpoken=[], lastMode='', audioEl=null;
   function choose(){ if(!ok) return; try{ var vs=synth.getVoices()||[];
     voice = vs.filter(function(v){return /en[-_]US/i.test(v.lang);})[0]
-         || vs.filter(function(v){return /^en/i.test(v.lang);})[0] || vs[0] || null; }catch(e){} }
+         || vs.filter(function(v){return /^en/i.test(v.lang);})[0] || vs[0] || null; }catch(e){ voice=null; } }
   if(ok){ try{ choose(); if(synth.addEventListener) synth.addEventListener('voiceschanged',choose); else synth.onvoiceschanged=choose; }catch(e){ ok=false; synth=null; } }
+  function hasNativeVoice(){ if(!ok) return false; try{ if(!voice) choose(); return !!voice && (synth.getVoices()||[]).length>0; }catch(e){ return false; } }
   function mkUtter(text){
     var u=new SpeechSynthesisUtterance(String(text));
     u.lang='en-US'; u.rate=0.82; u.pitch=1.05; u.volume=1;
-    if(!voice) choose(); if(voice) u.voice=voice;
+    if(voice) u.voice=voice;
     live.push(u); // retain reference so Chrome doesn't GC the utterance mid-speech
     u.onend=u.onerror=function(){ var i=live.indexOf(u); if(i>=0) live.splice(i,1); };
     return u;
   }
-  function speakOne(text){ if(!ok||!text) return; try{ if(synth.paused) synth.resume(); synth.speak(mkUtter(text)); }catch(e){} }
-  // Unlock TTS on the first user gesture (some browsers block the first non-gesture utterance).
-  function prime(){ if(!ok||primed) return; primed=true; try{ synth.resume(); synth.speak(mkUtter(' ')); }catch(e){} }
-  // Speak items back-to-back (e.g. [word, definition]). Speak SYNCHRONOUSLY so a tap-triggered
-  // call stays inside the user-gesture (iOS/Safari block speech scheduled from a later timer).
-  // Only cancel when something is actually queued, to avoid the Chrome cancel→speak drop.
-  function speakSeq(list){ if(!ok) return; list=(list||[]).filter(function(t){return t && String(t).trim();});
-    lastSpoken=list.slice();
-    try{ if(synth.speaking||synth.pending) synth.cancel(); }catch(e){}
-    try{ if(synth.paused) synth.resume(); }catch(e){}
-    for(var i=0;i<list.length;i++) speakOne(list[i]);
-  }
-  return { speakSeq:speakSeq, prime:prime, get supported(){ return ok; }, _last:function(){ return lastSpoken; } };
+  function nativeSeq(list){ try{ if(synth.speaking||synth.pending) synth.cancel(); if(synth.paused) synth.resume(); }catch(e){}
+    for(var i=0;i<list.length;i++){ try{ synth.speak(mkUtter(list[i])); }catch(e){} } }
+  // fallback: stream each phrase as audio (plays cross-origin via a media element — no CORS needed)
+  function ttsUrl(t){ return 'https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q='+encodeURIComponent(String(t).slice(0,190)); }
+  function audioSeq(list){ try{ if(!audioEl){ audioEl=new Audio(); } var q=list.slice();
+    function nxt(){ if(!q.length){ audioEl.onended=null; return; } var t=q.shift();
+      try{ audioEl.src=ttsUrl(t); audioEl.onended=nxt; var p=audioEl.play(); if(p&&p.catch) p.catch(function(){}); }catch(e){ nxt(); } }
+    nxt(); }catch(e){} }
+  // Unlock audio on the first user gesture (create the element; prime the speech synth if present).
+  function prime(){ if(primed) return; primed=true;
+    try{ if(ok){ synth.resume(); synth.speak(mkUtter(' ')); } }catch(e){}
+    try{ if(!audioEl){ audioEl=new Audio(); } }catch(e){} }
+  function speakSeq(list){ list=(list||[]).filter(function(t){return t && String(t).trim();}); lastSpoken=list.slice();
+    if(hasNativeVoice()){ lastMode='native'; nativeSeq(list); }
+    else { lastMode='audio'; audioSeq(list); } }
+  return { speakSeq:speakSeq, prime:prime, get supported(){ return true; },
+    _last:function(){ return lastSpoken; }, _mode:function(){ return lastMode; }, _native:function(){ return hasNativeVoice(); } };
 })();
 
 /* ============================ S2 · drawSprunki ============================ */
@@ -1064,6 +1072,7 @@ function boot(){
       def:function(){ var b=state.battle; return (b&&b.kind==='spell')?WordBank.defOf(b.words[b.idx]):null; },
       musicOn:function(){ return Sound.isMusicOn(); }, defCount:function(){ return WordBank.defCount(); },
       spoken:function(){ return Speech._last(); }, speechOk:function(){ return Speech.supported; },
+      speechMode:function(){ return Speech._mode(); },
       bank:function(){ return { count:WordBank.count, sizes:WordBank.byGrade.map(function(a){return a.length;}),
         avgLen:WordBank.byGrade.map(function(a){ return a.reduce(function(s,w){return s+w.length;},0)/a.length; }),
         allAlpha:WordBank.byGrade.every(function(a){ return a.every(function(w){ return /^[a-z]+$/.test(w); }); }) }; } };
